@@ -1,42 +1,20 @@
+package com.upm.etsit.raquel.tfg;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-
-
-import java.util.Set;
-
-
-import org.apache.spark.api.java.function.Function;
-
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.spark.SparkConf;
-import org.apache.spark.TaskContext;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.function.FlatMapFunction;
-//import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFunction;
-import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaInputDStream;
-import org.apache.spark.streaming.api.java.JavaPairDStream;
-import org.apache.spark.streaming.api.java.JavaReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
-
-
-import scala.Tuple2;
-
-import org.apache.spark.streaming.kafka010.LocationStrategies;
-import org.apache.spark.streaming.kafka010.OffsetRange;
 import org.apache.spark.streaming.kafka010.ConsumerStrategies;
-import org.apache.spark.streaming.kafka010.HasOffsetRanges;
 import org.apache.spark.streaming.kafka010.KafkaUtils;
-
+import org.apache.spark.streaming.kafka010.LocationStrategies;
 
 import com.datastax.spark.connector.japi.CassandraJavaUtil;
 import com.datastax.spark.connector.japi.CassandraStreamingJavaUtil;
@@ -47,7 +25,6 @@ public class CosumeSpark {
     }
 	
 	public static void main(String args[]) throws InterruptedException{
-		
 		
 		Map<String, Object> kafkaParams = new HashMap<>();
 		kafkaParams.put("bootstrap.servers", "localhost:9092");
@@ -60,41 +37,25 @@ public class CosumeSpark {
 		Collection<String> topics = Arrays.asList("twitterdata");
 		
 		// Create a local StreamingContext with two working thread and batch interval of 1 second
-		SparkConf conf = new SparkConf().setMaster("local[2]").setAppName("NetworkWordCount")
+		SparkConf conf = new SparkConf().setMaster("local[5]").setAppName("TwitterApp")
 				.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
 		
 		
-		//conf.set("spark.cassandra.connection.host", "localhost");
-		//conf.set("spark.cassandra.connection.port", "9042");
+		conf.set("spark.cassandra.connection.host", "192.168.56.103");
+		conf.set("spark.cassandra.connection.port", "9042");
 		
 		JavaStreamingContext streamingContext = new JavaStreamingContext(conf, Durations.seconds(5));
 
-		// Create a Java version of the Spark Context from the configuration
-        //JavaSparkContext sc = new JavaSparkContext(conf);
-	
-		/*final JavaInputDStream<ConsumerRecord<String, String>> stream =
-		  KafkaUtils.createDirectStream(
-			streamingContext,
-		    LocationStrategies.PreferConsistent(),
-		    ConsumerStrategies.<String, String>Subscribe(topics, kafkaParams)
-		  );*/
 		
-	
-		/*JavaPairDStream<String, String> streammap = stream.mapToPair(
-		  new PairFunction<ConsumerRecord<String, String>, String, String>() {
-		    @Override
-		    public Tuple2<String, String> call(ConsumerRecord<String, String> record) {
-		      return new Tuple2<>(record.key(), record.value());
-		    }
-		  });*/
 		
-		//streammap.print();
+		//ConsumerRecord = A key/value pair to be received from Kafka
 		
-		 JavaInputDStream<ConsumerRecord<String, Tweet>> stream = KafkaUtils.createDirectStream(
+		JavaInputDStream<ConsumerRecord<String, Tweet>> stream = KafkaUtils.createDirectStream(
 				 streamingContext, 
 				 LocationStrategies.PreferConsistent(),
 				 ConsumerStrategies.<String, Tweet>Subscribe(topics, kafkaParams)
 				);
+		 
 		 
 		
 		JavaDStream<Tweet> tweetStream= stream.map(
@@ -102,9 +63,40 @@ public class CosumeSpark {
 					 public Tweet call(ConsumerRecord<String, Tweet> record) {
 						 return record.value();
 					 }
-				 });
-		tweetStream.print();
-		//CassandraStreamingJavaUtil.javaFunctions(tweetStream).writerBuilder("dcos", "tweets", CassandraJavaUtil.mapToRow(Tweet.class)).saveToCassandra();
+		});
+		
+		//tweetStream.print();
+		
+		
+		
+		
+		//Tweets que contengan la palabra 
+		
+		JavaDStream<Tweet> tweetStream2= tweetStream.filter(
+				 new Function< Tweet, Boolean>() {
+				      public Boolean call(Tweet tweet) throws Exception {
+				    	  if(tweet.getText().contains(" ")){
+				    		  return true;
+				    	  }else return false;
+	
+					 }
+		});
+		
+		//Imprimimos el texto del tweet y el número de retweets y la localizacion (ciudad)
+		tweetStream2.foreachRDD( x-> {
+	        x.collect().stream().forEach(
+	        		n-> System.out.println(n.getText()+"\n"+ n.getRetweets()+"\n"+n.getCountry()));
+	    });
+		
+		
+		
+
+		
+
+		
+		
+		
+		CassandraStreamingJavaUtil.javaFunctions(tweetStream).writerBuilder("twitterkeyspace", "tweets", CassandraJavaUtil.mapToRow(Tweet.class)).saveToCassandra();
 		
 	
 		
@@ -145,6 +137,9 @@ public class CosumeSpark {
 			    });
 			  }
 			});*/
+		
+		
+		
 		
 		streamingContext.start();
 		streamingContext.awaitTermination();
